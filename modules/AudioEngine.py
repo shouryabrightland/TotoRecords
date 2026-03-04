@@ -7,9 +7,10 @@ from AssistentCore import AssistantState
 from modules.Logging import Log 
 
 class AudioEngine:
-    def __init__(self, samplerate=16000, blocksize=1024):
+    def __init__(self, samplerate=16000, blocksize=1024,Assistant=None):
         self.SR = samplerate
         self.BLOCK = blocksize
+        self.Assistant = Assistant
         self.log = Log("Audio Engine").log
 
         self.q = queue.Queue()
@@ -37,31 +38,52 @@ class AudioEngine:
         )
         self.thread.start()
         self.log("Started")
+        self.Assistant.on_state_change(self.AudioUXUpdate)
+
+        self.NoBGlist = [AssistantState.LISTENING,AssistantState.SPEAKING]
+        self.NoSoundlist = [AssistantState.LISTENING]
 
     # ─────────────────────────────
     # PUBLIC API
     # ─────────────────────────────
 
     def play_bg_file(self, file_path, volume=0.4):
-        """Looping background sound (thinking / listening)"""
+        """Looping background sound (e.g. for thinking music)"""
+        if self.Assistant.current_state in self.NoBGlist:
+            self.log("Currently in state that blocks BG play",self.Assistant.current_state,file_path)
+            return
         self.log("putting Query bg file",file_path)
-        self.bgAllow = True
         self.q.put(("bg", file_path, volume))
 
     def play_file(self, file_path, volume=1.0):
-        """Foreground TTS (preempts BG)"""
+        """Foreground sound (e.g. for effects)"""
         self.log("putting Query file",file_path)
-        self.q.put(("tts", file_path, volume))
+        self.q.put(("afx", file_path, volume))
 
-    def play_samples(self, samples: np.ndarray):
+    # def play_samples(self, samples: np.ndarray):
+    #     """Raw samples playback (preempts BG)"""
+    #     self.log("putting Samples Query",samples.shape)
+    #     self.q.put(("samples", samples, None))
+
+    def speak(self, samples: np.ndarray):
         """Raw samples playback (preempts BG)"""
-        self.log("putting Samples Query",samples.shape)
-        self.q.put(("samples", samples, None))
+
+        if self.Assistant.current_state in self.NoSoundlist:
+            self.log("Currently in state that blocks speaking",self.Assistant.current_state)
+            return
+
+        if samples is None:
+            self.log("putting End of Speech")
+            self.q.put(("tts", None, None))
+            return
+            
+        self.log("putting Samples to Speak",samples.shape)
+        self.q.put(("tts", samples, None))
+
 
     def stop_bg(self):
         """Stop background audio immediately"""
         self.log("BG stop flag setted")
-        self.bgAllow = False
         self.bg_stop_event.set()
 
     def shutdown(self):
@@ -82,14 +104,14 @@ class AudioEngine:
             if job == "exit":
                 break
 
-            if job == "bg" and self.bgAllow:
+            if job == "bg" and self.Assistant.current_state not in self.NoBGlist:
                 self._play_bg_loop(a, b)
 
-            elif job == "tts":
+            elif job == "afx":
                 self._play_file(a, b)
 
-            elif job == "samples":
-                self._play_samples(a)
+            elif job == "tts":
+                self._speak(a)
 
             self.q.task_done()
 
@@ -136,8 +158,26 @@ class AudioEngine:
 
         self.stream.write(data * volume)
 
-    def _play_samples(self, samples):
-        self.log("Playing Samples")
+    # def _play_samples(self, samples):
+    #     self.log("Playing Samples")
+    #     self.bg_stop_event.set()
+    #     #print(self.bg_stop_event.is_set(),"o")
+    #     if samples.ndim > 1:
+    #         samples = samples.mean(axis=1)
+
+    #     self.stream.write(samples.astype(np.float32))
+
+    def _speak(self, samples):
+        if self.Assistant.current_state != AssistantState.SPEAKING:
+            self.log("Not in SPEAKING state, starting it. Set in speaking state to speak")
+            return
+        
+        if samples is None:
+            self.log("End of TTS stream")
+            self.Assistant.end_state(AssistantState.SPEAKING)
+            return
+
+        self.log("Speaking Samples")
         self.bg_stop_event.set()
         #print(self.bg_stop_event.is_set(),"o")
         if samples.ndim > 1:

@@ -39,8 +39,10 @@ class VADEngine:
             self.frame_buffer = self.frame_buffer[self.cfg.vad_frame:]
 
             speech_prob = self._run_silero(frame)
+            print(f"\r[VAD] Speech Probability: {speech_prob:.4f}",end="")
 
-            self.recorded_audio.extend(frame)
+            if speech_prob > 0.2:
+                self.recorded_audio.extend(frame) # Only add to recorded audio if speech is detected, otherwise just count silence
 
             if speech_prob < self.cfg.vad_threshold:
                 self.silence_counter += len(frame)

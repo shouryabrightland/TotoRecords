@@ -29,9 +29,9 @@ class AssistantCore:
         self.Active_state.remove(state)
         self.current_state = self.Active_state[-1] if self.Active_state else AssistantState.IDLE
         print(f"[STATE] ← {state.name}")
+        print("current State -->",self.get_state())
         for callback in self.listeners:
             callback(state,False)
-        print("current State -->",self.get_state())
     
     def get_state(self):
         return self.current_state

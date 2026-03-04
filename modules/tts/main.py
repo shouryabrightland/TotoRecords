@@ -67,11 +67,16 @@ class TTS:
                 syn.length_scale = 1.8  # ~10–15% slower
             else:
                 syn.length_scale = 1.2
+            if self.Assistant.current_state != AssistantState.SPEAKING:
+                self.Assistant.start_state(AssistantState.SPEAKING)
 
-            self.Assistant.start_state(AssistantState.SPEAKING)
+
             for samples in self.synthesize_stream(text):
-                self.speaker.play_samples(samples)
-            self.Assistant.end_state(AssistantState.SPEAKING)
+                self.speaker.speak(samples)
+
+                
+            if self.q.empty():
+                self.speaker.speak(None) # Signal end of speech to AudioEngine
             self.q.task_done()
 
     # ---------------------------

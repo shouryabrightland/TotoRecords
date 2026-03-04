@@ -130,6 +130,7 @@ class Recorder:
             blocksize=int(self.cfg.sr * self.cfg.hop_sec),
             dtype="float32",
             callback=self._audio_callback,
+            device="pipewire"
         ):
             while True:
                 time.sleep(0.1)

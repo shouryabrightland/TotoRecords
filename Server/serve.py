@@ -2,6 +2,7 @@ from AssistentCore import AssistantCore, AssistantState
 from modules.AudioEngine import AudioEngine
 from modules.Logging import Log
 from modules.tts.main import TTS
+print("Loading Assistant...")
 from modules.stt.main import STT
 from types import FunctionType
 from queue import Queue
@@ -10,8 +11,9 @@ import Server.Recorder as Recorder
 
 class serve:
     def __init__(self,server: FunctionType,Assistant:AssistantCore):
-        Audio = AudioEngine(16000)
-        Assistant.on_state_change(Audio.AudioUXUpdate)
+        
+        Audio = AudioEngine(16000,Assistant=Assistant)
+
         Assistant.start_state(AssistantState.LOADING)
         tts = TTS("voices/en_US-lessac-low.onnx",Audio,Assistant)
         self.log = Log("Server").log

@@ -3,4 +3,4 @@ class Log:
         self.name = name or "Logging"
     def log(self,*lis):
         pass
-        #print("["+self.name+"]",*lis)
+        print("["+self.name+"]",*lis)
