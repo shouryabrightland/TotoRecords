@@ -16,8 +16,8 @@ class serve:
 
         Assistant.start_state(AssistantState.LOADING)
         tts = TTS("voices/en_US-lessac-low.onnx",Audio,Assistant)
-        self.log = Log("Server").log
-        self.log("Loading Services...")
+        self.log = Log("Server")
+        self.log.info("Loading Services...")
         stt = STT("base.en")
         Res = Response(tts,Audio)
         recorder = Recorder.Recorder("models/toto_v2.onnx",stt=stt,Assistant=Assistant)
@@ -37,7 +37,7 @@ class Request:
     def __init__(self,tts:TTS,audio:AudioEngine,recorder:Recorder.Recorder,Assistant:AssistantCore):
         self.tts = tts
         self.audio = audio
-        self.log = Log("Server REQ").log
+        self.log = Log("Server REQ")
         self.queue = Queue()
         self.recorder = recorder
         self.Assistant = Assistant
@@ -86,7 +86,7 @@ class Response:
         self.tts = tts
         self.speaker = speaker
         self.payload = {}
-        self.log = Log("Server RES").log
+        self.log = Log("Server RES")
         self.stopflag = threading.Event()
 
     def send(self,message):
@@ -94,9 +94,9 @@ class Response:
     
     def end(self):
         self.speaker.stop_bg()
-        self.log("waiting for tts to shut it's mouth")
+        self.log.info("waiting for tts to shut it's mouth")
         self.tts.q.join() #wait for tts to complete..
-        self.log("waiting for speaker to shut it's mouth")
+        self.log.info("waiting for speaker to shut it's mouth")
         self.speaker.q.join() #wait for speaker 
         self.stopflag.set()
         return self

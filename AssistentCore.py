@@ -1,5 +1,7 @@
 from enum import Enum
 
+from modules.Logging import Log
+
 class AssistantState(Enum):
     IDLE = 0
     LISTENING = 1
@@ -15,12 +17,14 @@ class AssistantCore:
         self.current_state = initial_state
         self.listeners = []
         self.Active_state = []  # store job identifiers
+        self.log = Log("AssistantCore", Log.INFO,"AssistentCore.log")
+        self.log.info("AssistantCore Initialized in state",initial_state.name)
 
     def start_state(self, state):
         self.Active_state.append(state)
         self.current_state = state
-        print(f"[STATE] → {state.name}")
-        print("current State -->",self.get_state())
+        self.log.info(f"[STATE] → {state.name}")
+        self.log.info(f"current State --> {self.get_state()}")
 
         for callback in self.listeners:
             callback(state,True)
@@ -28,8 +32,8 @@ class AssistantCore:
     def end_state(self, state):
         self.Active_state.remove(state)
         self.current_state = self.Active_state[-1] if self.Active_state else AssistantState.IDLE
-        print(f"[STATE] ← {state.name}")
-        print("current State -->",self.get_state())
+        self.log.info(f"[STATE] ← {state.name}")
+        self.log.info(f"current State --> {self.get_state()}")
         for callback in self.listeners:
             callback(state,False)
     

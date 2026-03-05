@@ -9,14 +9,14 @@ class STT:
         """
         model_name: "tiny", "small", "medium", "large" (tiny is best for Pi)
         """
-        self.log = Log("WhisperAPI").log
-        self.log("Loading Whisper",model_name,"model...")
+        self.log = Log("WhisperAPI")
+        self.log.info("Loading Whisper",model_name,"model...")
         self.model = WhisperModel(
             model_name,
             device="cpu",
             compute_type="int8"
         )
-        self.log("loaded Model successfully...")
+        self.log.info("loaded Model successfully...")
     #---------------------------------------
 
     def transcribe(self,audio,prompt=""):
@@ -26,7 +26,7 @@ class STT:
         audio = audio.astype("float32")
         #time.sleep(5)---------------------
         t1 = time.perf_counter()
-        self.log("transcripting Audio...")
+        self.log.info("transcripting Audio...")
         segments, _ = self.model.transcribe(
             audio,
             language="en",
@@ -37,7 +37,7 @@ class STT:
             vad_filter=False,
         )
         text = " ".join([s.text for s in segments]).strip(" ")
-        self.log("Transcribed:", text)
+        self.log.info("Transcribed:", text)
         t2 = time.perf_counter()
-        self.log("time taken in transcription",(t2-t1)*1000,"ms")
+        self.log.info("time taken in transcription",(t2-t1)*1000,"ms")
         return text

@@ -7,11 +7,11 @@ import time
 class WakeEngine:
     def __init__(self, model_path: str, config: RecorderConfig):
         self.cfg = config
-        self.log = Log("WakeEngine").log
+        self.log = Log("WakeEngine")
 
         self.samples = int(self.cfg.sr * self.cfg.window_sec)
 
-        self.log("Wake model loaded")
+        self.log.info("Wake model loaded")
 
         sess_options = ort.SessionOptions()
         sess_options.intra_op_num_threads = 1
@@ -29,7 +29,7 @@ class WakeEngine:
         self.score_buffer = deque(maxlen=self.cfg.vote_window)
         self.last_trigger = 0.0
 
-        self.log("Wake model loaded")
+        self.log.info("Wake model loaded")
 
     def detect(self, audio_buffer: deque):
         if len(audio_buffer) < self.samples:
@@ -59,7 +59,7 @@ class WakeEngine:
 
             self.last_trigger = now
             self.score_buffer.clear()
-            self.log("Wake word detected")
+            self.log.info("Wake word detected")
             return True
 
         return False

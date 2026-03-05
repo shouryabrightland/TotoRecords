@@ -22,7 +22,7 @@ class Recorder:
     ):
         self.Assistant = Assistant
         self.cfg = config
-        self.log = Log("Recorder").log
+        self.log = Log("Recorder")
 
         self.active_event = threading.Event()
         self.force_wake = threading.Event()
@@ -51,7 +51,7 @@ class Recorder:
     def _audio_callback(self, indata, frames, time_info, status):
 
         if status:
-            self.log(status)
+            self.log.warn(status)
 
         if not self.active_event.is_set():
             return
@@ -85,7 +85,7 @@ class Recorder:
 
     # ----------------------------------------------------------
     def _transcriber_worker(self):
-        self.log("Transcriber started")
+        self.log.info("Transcriber started")
 
         while True:
             audio = self.command_queue.get()
@@ -103,13 +103,13 @@ class Recorder:
                     self.Assistant.end_state(AssistantState.THINKING)
 
             except Exception as e:
-                self.log("Transcription error:", e)
+                self.log.error("Transcription error:", e)
                 continue
 
             if self.output_queue:
                 self.output_queue.put(text)
 
-            self.log("User:", text)
+            self.log.info("User:", text)
 
     # ----------------------------------------------------------
     
@@ -122,7 +122,7 @@ class Recorder:
             daemon=True
         ).start()
 
-        self.log("Listening...")
+        self.log.info("Listening...")
 
         with sd.InputStream(
             samplerate=self.cfg.sr,

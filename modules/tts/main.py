@@ -10,14 +10,14 @@ import re
 
 class TTS:
     def __init__(self, model_path, speaker: AudioEngine,Assistant:AssistantCore = None):
-        self.log = Log("TTS").log
+        self.log = Log("TTS")
 
         if not isinstance(model_path, str):
             raise TypeError("model_path must be a string")
         
-        self.log("loading PiperVoice Model",model_path)
+        self.log.info("loading PiperVoice Model",model_path)
         self.voice = PiperVoice.load(model_path)
-        self.log("loaded model Successfully")
+        self.log.info("loaded model Successfully")
 
         syn = self.voice.config
         syn.length_scale = 1.2
@@ -40,18 +40,18 @@ class TTS:
     # ---------------------------
     def enqueue(self, text: str,slow = None):
         """Add text to TTS queue for non-blocking speech"""
-        self.log("Putting Query")
+        self.log.info("Putting Query")
         self.q.put((text,slow))
 
     def stop(self):
         """Stop current speaking"""
-        self.log("Stoping BG music")
+        self.log.info("Stoping BG music")
         self.speaker.stop_bg()  # Stop background or current playback
         #self.speaking = False
 
     def shutdown(self):
         """Stop the TTS worker"""
-        self.log("Shuting Down")
+        self.log.info("Shuting Down")
         self.running = False
         self.q.put(None)
 
@@ -85,7 +85,7 @@ class TTS:
 
     def synthesize_stream(self, text, syn_config=None):
         text = self.remove_emoji(text)
-        self.log("Synthesizing text:",text)
+        self.log.info("Synthesizing text:",text)
         for chunk in self.voice.synthesize(text, syn_config=syn_config):
             samples = chunk.audio_float_array
             if samples is not None:

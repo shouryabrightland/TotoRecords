@@ -8,7 +8,7 @@ from modules.audio.recoderConfig import RecorderConfig
 class VADEngine:
     def __init__(self, config: RecorderConfig):
         self.cfg = config
-        self.log = Log("VADEngine").log
+        self.log = Log("VADEngine")
 
         self.vad_model, _ = torch.hub.load(
             repo_or_dir="snakers4/silero-vad",
@@ -56,7 +56,7 @@ class VADEngine:
             ):
                 audio = np.array(self.recorded_audio, dtype=np.float32)
                 self._reset()
-                self.log("Speech ended")
+                self.log.info("Speech ended")
                 return True, audio
 
         return False, None
