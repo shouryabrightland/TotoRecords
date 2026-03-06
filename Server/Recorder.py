@@ -22,10 +22,9 @@ class Recorder:
     ):
         self.Assistant = Assistant
         self.cfg = config
-        self.log = Log("Recorder")
+        self.log = Log("Recorder", Log.DEBUG)
 
         self.active_event = threading.Event()
-        self.force_wake = threading.Event()
 
         self.wake = WakeEngine(model_path, config)
         self.vad = VADEngine(config)
@@ -41,10 +40,16 @@ class Recorder:
         self.output_queue = None
         self.prompt_queue = None
 
+        self.mode = RecordingMode.IDLE
+        self.wake_detected = threading.Event()
+
         threading.Thread(
             target=self._transcriber_worker,
             daemon=True
         ).start()
+
+        self.timeout_event = self.vad.timeout_event
+        self.finished_recording_event = threading.Event()
 
     # ----------------------------------------------------------
 
@@ -54,6 +59,11 @@ class Recorder:
             self.log.warn(status)
 
         if not self.active_event.is_set():
+            self.reset()
+            return
+        
+        if self.Assistant.current_state == AssistantState.SPEAKING:
+            self.log.debug("Currently speaking, ignoring audio input.")
             return
 
         chunk = indata[:, 0].copy()
@@ -61,27 +71,61 @@ class Recorder:
         self.audio_buffer.extend(chunk)
         self.pre_roll.extend(chunk)
 
+        if self.mode == RecordingMode.WAKE:
+            if self.wake.detect(self.audio_buffer):
+                self.wake_detected.set()
+                self.active_event.clear()
+            return
+
+
         if not self.recording:
-            if self.wake.detect(self.audio_buffer) or self.force_wake.is_set():
+            if self.wake.detect(self.audio_buffer) or self.mode == RecordingMode.DIRECT:
                 self.Assistant.start_state(AssistantState.LISTENING)
                 self._start_recording()
 
         else:
             finished, audio = self.vad.process(chunk)
             if finished:
-                self.recording = False
-                self.command_queue.put(audio)
-                self.active_event.clear()
-                self.force_wake.clear()
                 self.Assistant.end_state(AssistantState.LISTENING)
+
+                if audio is None:
+                    self.log.info("No speech detected, discarding.")
+                    self.reset()
+                else:
+                    self.recording = False
+                    self.command_queue.put(audio)
+                    self.active_event.clear()
+
+                self.finished_recording_event.set()
 
     # ----------------------------------------------------------
 
     def _start_recording(self):
         self.recording = True
-        self.vad.recorded_audio = list(self.pre_roll)
-        self.vad.total_recorded = len(self.pre_roll)
+        self.vad.recorded_audio = []
+        self.vad.total_recorded = 0
         self.vad.silence_counter = 0
+
+    def reset(self):
+        self.log.debug("Resetting recorder states.")
+        self.active_event.clear()
+        self.wake_detected.clear()
+        self.mode = RecordingMode.IDLE
+        self.vad.recorded_audio = []
+        self.vad.total_recorded = 0
+        self.vad.silence_counter = 0
+
+    def detect_wake(self):
+        self.log.info("Waiting for wake word...")
+        self.reset()
+        self.mode = RecordingMode.WAKE
+        self.active_event.set()
+        t = self.wake_detected.wait()
+        self.reset()
+        return t
+    
+    def set_timeout(self, timeout_sec):
+        self.vad.set_timeout(timeout_sec)
 
     # ----------------------------------------------------------
     def _transcriber_worker(self):
@@ -117,11 +161,6 @@ class Recorder:
         self.output_queue = output_queue
         self.prompt_queue = prompt_queue
 
-        threading.Thread(
-            target=self._transcriber_worker,
-            daemon=True
-        ).start()
-
         self.log.info("Listening...")
 
         with sd.InputStream(
@@ -141,4 +180,5 @@ class Recorder:
 
 class RecordingMode(Enum):
     WAKE = 1
-    DIRECT = 2
+    IDLE = 2
+    DIRECT = 3

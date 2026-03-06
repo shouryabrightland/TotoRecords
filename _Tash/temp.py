@@ -1,97 +1,64 @@
-import onnx
+def format_report_table(data: dict, use_color=True) -> str:
 
-model = onnx.load("models/silero_vad_16k_op15.onnx")
-print(model.opset_import)
+    # ANSI colors
+    GREEN = "\033[92m"
+    CYAN = "\033[96m"
+    YELLOW = "\033[93m"
+    RESET = "\033[0m"
 
-import numpy as np
-import sounddevice as sd
-import onnxruntime as ort
-import time
+    def color(text, c):
+        return f"{c}{text}{RESET}" if use_color else text
 
-MODEL_PATH = "models/silero_vad_16k_op15.onnx"
-SR = 16000
-FRAME_SIZE = 512
+    # normalize keys
+    rows = [(k.replace("_", " ").title(), str(v)) for k, v in data.items()]
 
-# ----------------------------
-# Load ONNX
-# ----------------------------
+    summary_keys = {"total", "grade", "percentage", "result"}
 
-vad = ort.InferenceSession(
-    MODEL_PATH,
-    providers=["CPUExecutionProvider"]
-)
+    subjects = []
+    summary = []
 
-for i in vad.get_inputs():
-    print("INPUT:", i.name, i.shape)
+    for k, v in rows:
+        if k.lower() in summary_keys:
+            summary.append((k, v))
+        else:
+            subjects.append((k, v))
 
-for o in vad.get_outputs():
-    print("OUTPUT:", o.name, o.shape)
+    # widths
+    key_w = max(len(k) for k, _ in rows)
+    val_w = max(len(v) for _, v in rows)
 
-input_name = vad.get_inputs()[0].name
-state_name = vad.get_inputs()[1].name
-sr_name = vad.get_inputs()[2].name
+    def line(l, m, r):
+        return l + "─" * (key_w + 2) + m + "─" * (val_w + 2) + r
 
-state = np.zeros((2, 1, 128), dtype=np.float32)
-sr_tensor = np.array(SR, dtype=np.int64)
+    out = []
 
-print("\nListening...\n")
-print(vad.opset_import)
+    # header
+    out.append(line("┌", "┬", "┐"))
 
-# ----------------------------
-# Audio Callback
-# ----------------------------
+    title = "REPORT CARD"
+    total_width = key_w + val_w + 5
+    out.append(f"│ {color(title.center(total_width-2), CYAN)} │")
 
-buffer = np.array([], dtype=np.float32)
+    out.append(line("├", "┬", "┤"))
 
-
-def callback(indata, frames, time_info, status):
-    global buffer, state
-
-    if status:
-        print(status)
-
-    chunk = indata[:, 0].copy()
-
-    # Print raw audio stats
-    print(
-        "Peak:", np.max(np.abs(chunk)),
-        "STD:", np.std(chunk)
-    )
-
-    buffer = np.concatenate((buffer, chunk))
-
-    while len(buffer) >= FRAME_SIZE:
-        frame = buffer[:FRAME_SIZE]
-        buffer = buffer[FRAME_SIZE:]
-
-        x = frame.reshape(1, -1).astype(np.float32)
-
-        outputs = vad.run(
-            None,
-            {
-                input_name: x,
-                state_name: state,
-                sr_name: sr_tensor,
-            },
+    # subjects
+    for k, v in subjects:
+        out.append(
+            f"│ {k:<{key_w}} │ {color(v, GREEN):>{val_w + (9 if use_color else 0)}} │"
         )
 
-        speech_prob = float(outputs[0][0][0])
-        state = outputs[1]
+    # summary section
+    if summary:
+        out.append(line("├", "┼", "┤"))
 
-        print("VAD prob:", round(speech_prob, 4))
+        for k, v in summary:
+            out.append(
+                f"│ {color(k, YELLOW):<{key_w + (9 if use_color else 0)}} │ {v:>{val_w}} │"
+            )
+
+    out.append(line("└", "┴", "┘"))
+
+    return "\n".join(out) 
 
 
-# ----------------------------
-# Start Stream
-# ----------------------------
-
-with sd.InputStream(
-    samplerate=SR,
-    channels=1,
-    blocksize=FRAME_SIZE,
-    dtype="float32",
-    callback=callback,
-):
-    print("REAL samplerate:", SR)
-    while True:
-        time.sleep(0.1)
+print("\n" + format_report_table({"Math": 95, "Science": 88, "Total": 183, "Grade": "A"}))

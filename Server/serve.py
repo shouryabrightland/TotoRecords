@@ -8,16 +8,15 @@ from types import FunctionType
 from queue import Queue
 import threading
 import Server.Recorder as Recorder
+print("Modules imported, starting server...")
 
 class serve:
     def __init__(self,server: FunctionType,Assistant:AssistantCore):
-        
-        Audio = AudioEngine(16000,Assistant=Assistant)
-
-        Assistant.start_state(AssistantState.LOADING)
-        tts = TTS("voices/en_US-lessac-low.onnx",Audio,Assistant)
         self.log = Log("Server")
         self.log.info("Loading Services...")
+        Audio = AudioEngine(16000,Assistant=Assistant)
+        Assistant.start_state(AssistantState.LOADING)
+        tts = TTS("voices/en_US-lessac-low.onnx",Audio,Assistant)
         stt = STT("base.en")
         Res = Response(tts,Audio)
         recorder = Recorder.Recorder("models/toto_v2.onnx",stt=stt,Assistant=Assistant)
@@ -34,7 +33,7 @@ class serve:
 
 
 class Request:
-    def __init__(self,tts:TTS,audio:AudioEngine,recorder:Recorder.Recorder,Assistant:AssistantCore):
+    def __init__(self,tts:TTS,audio:AudioEngine,recorder:Recorder.Recorder,Assistant:AssistantCore,vad_timeout_sec=None):
         self.tts = tts
         self.audio = audio
         self.log = Log("Server REQ")
@@ -45,25 +44,43 @@ class Request:
         self.Promptqueue = Queue()
         self.needforceWake = False
 
+        self.default_vad_timeout = vad_timeout_sec
+
         self.Assistant.on_state_change(self.on_assistant_state_change)
     
-    def input(self,question:str,prompt=""):
-        self.recorder.active_event.set()
+    def input(self,question:str,prompt="",timeout=None):
         self.tts.enqueue(question)
+        self.recorder.set_timeout(timeout or self.default_vad_timeout)
+        self.recorder.active_event.set()
         print(question)
         self.Promptqueue.put(prompt)
-        val = self.queue.get().strip()
+        #wait for recording to finish or timeout
+        self.recorder.finished_recording_event.wait()
+        self.recorder.finished_recording_event.clear()
+
+        self.log.info("Received recording, now waiting for processing...")
+        if self.recorder.timeout_event.is_set():
+            self.recorder.timeout_event.clear()
+            raise TimeoutError("Recording timed out")
+        else:
+            val = self.queue.get().strip()
+
         self.recorder.active_event.clear()
+        self.recorder.set_timeout(self.default_vad_timeout) #reset timeout after use
         return val.lower()
     
-    def input_no_wait(self,question:str,prompt=""):
+    def input_no_wait(self,question:str,prompt="",timeout=None):
         self.force_wake()
-        return self.input(question,prompt)
+        return self.input(question,prompt,timeout=timeout)
+    
+    
+    def detect_call(self):
+        return self.recorder.detect_wake()
     
     
     def on_assistant_state_change(self,state:AssistantState,is_start:bool):
         if self.Assistant.current_state == AssistantState.IDLE and self.needforceWake and not is_start:
-            self.recorder.force_wake.set()
+            self.recorder.mode = Recorder.RecordingMode.DIRECT
             self.needforceWake = False
             
     

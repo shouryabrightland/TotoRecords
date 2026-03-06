@@ -20,7 +20,8 @@ class TTS:
         self.log.info("loaded model Successfully")
 
         syn = self.voice.config
-        syn.length_scale = 1.2
+        self.default_length_scale = 1.3
+        syn.length_scale = self.default_length_scale
         
         self.SR = speaker.SR
         self.speaker = speaker
@@ -66,7 +67,7 @@ class TTS:
             if slow:
                 syn.length_scale = 1.8  # ~10–15% slower
             else:
-                syn.length_scale = 1.2
+                syn.length_scale = self.default_length_scale 
             if self.Assistant.current_state != AssistantState.SPEAKING:
                 self.Assistant.start_state(AssistantState.SPEAKING)
 

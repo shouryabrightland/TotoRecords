@@ -204,4 +204,14 @@ class AudioEngine:
             else:
                 self.stop_bg()
 
+        # some defult sounds settings
+        if state in self.NoBGlist and is_start:
+            self.stop_bg()
+        # when thinking done! then stop bg music if it's still playing
+        if state == AssistantState.THINKING and not is_start:
+            self.stop_bg()
+        
+            
+        
+
 

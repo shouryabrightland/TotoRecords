@@ -31,10 +31,12 @@ class STT:
             audio,
             language="en",
             task="transcribe",
-            beam_size=5,
+            beam_size=2,
             initial_prompt=prompt,
             temperature=0.0,
             vad_filter=False,
+            condition_on_previous_text=False,
+            max_new_tokens=32
         )
         text = " ".join([s.text for s in segments]).strip(" ")
         self.log.info("Transcribed:", text)

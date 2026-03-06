@@ -30,7 +30,11 @@ class AssistantCore:
             callback(state,True)
     
     def end_state(self, state):
-        self.Active_state.remove(state)
+        try:
+            self.Active_state.remove(state)
+        except ValueError:
+            self.log.error(f"Attempted to end state {state.name} which is not active.")
+            return
         self.current_state = self.Active_state[-1] if self.Active_state else AssistantState.IDLE
         self.log.info(f"[STATE] ← {state.name}")
         self.log.info(f"current State --> {self.get_state()}")
