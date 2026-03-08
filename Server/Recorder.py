@@ -22,7 +22,7 @@ class Recorder:
     ):
         self.Assistant = Assistant
         self.cfg = config
-        self.log = Log("Recorder", Log.DEBUG)
+        self.log = Log("Recorder")
 
         self.active_event = threading.Event()
 

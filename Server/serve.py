@@ -43,6 +43,7 @@ class Request:
         self.payload = None
         self.Promptqueue = Queue()
         self.needforceWake = False
+        self.gui = None
 
         self.default_vad_timeout = vad_timeout_sec
 
@@ -53,6 +54,7 @@ class Request:
         self.recorder.set_timeout(timeout or self.default_vad_timeout)
         self.recorder.active_event.set()
         print(question)
+        self.gui.set_message(question)
         self.Promptqueue.put(prompt)
         #wait for recording to finish or timeout
         self.recorder.finished_recording_event.wait()
@@ -105,9 +107,11 @@ class Response:
         self.payload = {}
         self.log = Log("Server RES")
         self.stopflag = threading.Event()
+        self.gui = None
 
     def send(self,message):
         self.tts.enqueue(message)
+        self.gui.set_message(message)
     
     def end(self):
         self.speaker.stop_bg()

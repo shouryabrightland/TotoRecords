@@ -7,6 +7,8 @@ from modules.Logging import Log
 from modules.fuzzy import fuzzy
 from Server.serve import serve,Request,Response
 
+import screen as gui
+
 DATA_DIR = "data"
 log = Log("Request Handler (main.py)")
 fz = fuzzy()
@@ -16,7 +18,12 @@ def server(req:Request, res:Response):
     #config
     req.default_vad_timeout = 10  # Set default VAD timeout to 10 seconds
     log.info("Server is ready to handle requests.")
+    gui.start_gui()
+    res.gui = req.gui = gui
+
+    Assistant.on_state_change(onStateGUI)
     while req.detect_call():
+        gui.show_eyes()
         print("restarting request loop")
         try:
 
@@ -32,6 +39,7 @@ def server(req:Request, res:Response):
             studentname = ask_for_student(req,res,NameList)
             if studentname:
                 StudentInfo = StudentList[studentname]
+                gui.show_report(StudentInfo)
                 table = format_report_table(StudentInfo)
                 log.info(f"Generated report for {studentname}:\n{table}")
                 print("\n"*2+table,end="\n"*2)
@@ -203,7 +211,10 @@ def format_report_table(data: dict, use_color=True) -> str:
 
     return "\n".join(out) 
 
-
+def onStateGUI(state,is_start):
+    if state == AssistantState.SPEAKING and not is_start:
+        gui.show_eyes()
+    
 
 serve(server,Assistant)
 
