@@ -1,9 +1,26 @@
 import pygame
 import threading
 import random
+from enum import Enum
+
+# ---------- EMOTIONS ----------
+
+class Emotion(Enum):
+    NORMAL = 0
+    CURIOUS = 1
+    EXCITED = 2
+    SLEEPY = 3
+    BLINK = 4
+    HAPPY = 5
+    SAD = 6
+    ANGRY = 7
+
+
+# ---------- STATE ----------
 
 state = {
-    "mode": "eyes",
+    "screen": "eyes",
+    "emotion": Emotion.NORMAL,
     "message": "",
     "data": None
 }
@@ -11,132 +28,306 @@ state = {
 lock = threading.Lock()
 
 
+# ---------- API ----------
+
+def set_emotion(e):
+    with lock:
+        state["emotion"] = e
+        state["screen"] = "eyes"
+
+
 def set_message(text):
     with lock:
-        state["mode"] = "message"
+        state["screen"] = "message"
         state["message"] = text
 
 
 def show_report(data):
     with lock:
-        state["mode"] = "report"
+        state["screen"] = "report"
         state["data"] = data
 
 
 def show_eyes():
     with lock:
-        state["mode"] = "eyes"
+        state["screen"] = "eyes"
 
+
+# ---------- DRAW ----------
+
+def draw_eye(surface, x, y, size):
+    pygame.draw.rect(
+        surface,
+        (255,255,255),
+        (x,y,size,size),
+        border_radius=int(size*0.25)
+    )
+
+
+# ---------- GUI LOOP ----------
 
 def gui_loop():
 
     pygame.init()
 
-    # Fullscreen display (4K monitor)
     screen = pygame.display.set_mode((0,0), pygame.FULLSCREEN)
-    screen_w, screen_h = screen.get_size()
-
-    # Internal rendering resolution (720p)
-    render_w = 1280
-    render_h = 720
-
-    render_surface = pygame.Surface((render_w, render_h))
+    width, height = screen.get_size()
 
     font = pygame.font.SysFont("Arial", 40)
 
     clock = pygame.time.Clock()
 
-    base_x = render_w // 2
-    eye_offset = 150
+    # ---- eye geometry ----
 
-    eye_shift = 0
-    target_shift = 0
+    eye_size = int(height * 0.28)
+    gap = int(width * 0.08)
 
-    blink_timer = 0
-    blink = False
+    center_x = width // 2
+    center_y = height // 2
+
+    # ---- eye movement ----
+
+    offset_x = 0
+    offset_y = 0
+
+    next_move_time = 0
+
+    scan_pattern = [
+        (0,0),
+        (-width//4,0),
+        (width//4,0),
+        (0,0)
+    ]
+
+    scan_index = 0
+
+    # ---- blinking ----
+
+    last_blink = 0
+    blink_time = 120
+    blinking = False
+    blink_delay = random.randint(4000,7000)
+
+    # ---- text cache ----
+
+    text_cache = None
+    last_text = ""
 
     running = True
 
     while running:
 
+        now = pygame.time.get_ticks()
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
 
-        render_surface.fill((0,0,0))
+        screen.fill((0,0,0))
 
         with lock:
-            mode = state["mode"]
+            screen_mode = state["screen"]
+            emotion = state["emotion"]
+            message = state["message"]
+            data = state["data"]
 
-        # ---------------- EYES MODE ----------------
+        # ================= EYES ================= #
 
-        if mode == "eyes":
+        if screen_mode == "eyes":
 
-            if random.randint(0,100) < 3:
-                target_shift = random.randint(-40,40)
+            # ----- eye movement -----
 
-            eye_shift += (target_shift - eye_shift) * 0.1
+            if now > next_move_time:
 
-            blink_timer += 1
+                if random.random() < 0.4:
+                    offset_x, offset_y = scan_pattern[scan_index]
+                    scan_index = (scan_index + 1) % len(scan_pattern)
+                else:
+                    offset_x = random.randint(-width//4, width//4)
+                    offset_y = random.randint(-height//6, height//6)
 
-            if blink_timer > 90:
-                blink = True
+                next_move_time = now + random.randint(600,5000)
 
-            if blink:
-                eye_h = 20
-                if blink_timer > 95:
-                    blink = False
-                    blink_timer = 0
+            # ----- blinking -----
+
+            if not blinking and now - last_blink > blink_delay:
+                blinking = True
+                last_blink = now
+
+            if blinking:
+                draw_emotion = Emotion.BLINK
+
+                if now - last_blink > blink_time:
+                    blinking = False
+                    last_blink = now
+                    blink_delay = random.randint(4000,7000)
+                    draw_emotion = emotion
             else:
-                eye_h = 80
+                draw_emotion = emotion
 
-            left_eye = (int(base_x-eye_offset+eye_shift), render_h//2)
-            right_eye = (int(base_x+eye_offset+eye_shift), render_h//2)
+            # ----- eye positions -----
 
-            pygame.draw.ellipse(render_surface,(255,255,255),(left_eye[0],left_eye[1],140,eye_h))
-            pygame.draw.ellipse(render_surface,(255,255,255),(right_eye[0],right_eye[1],140,eye_h))
+            left_x = center_x - gap//2 - eye_size + offset_x
+            right_x = center_x + gap//2 + offset_x
+            y = center_y - eye_size//2 + offset_y
 
-        # ---------------- MESSAGE MODE ----------------
+            # ----- emotions -----
 
-        elif mode == "message":
+            if draw_emotion == Emotion.NORMAL:
 
-            with lock:
-                text = state["message"]
+                draw_eye(screen,left_x,y,eye_size)
+                draw_eye(screen,right_x,y,eye_size)
 
-            txt = font.render(text,True,(255,255,255))
-            rect = txt.get_rect(center=(render_w//2,render_h//2))
+            elif draw_emotion == Emotion.CURIOUS:
 
-            render_surface.blit(txt,rect)
+                draw_eye(screen,left_x,y,eye_size)
+                draw_eye(screen,right_x,y+25,eye_size)
 
-        # ---------------- REPORT MODE ----------------
+            elif draw_emotion == Emotion.EXCITED:
 
-        elif mode == "report":
+                big = int(eye_size * 1.2)
 
-            with lock:
-                data = state["data"]
+                draw_eye(
+                    screen,
+                    center_x - gap//2 - big + offset_x,
+                    center_y - big//2 + offset_y,
+                    big
+                )
 
-            y = 150
+                draw_eye(
+                    screen,
+                    center_x + gap//2 + offset_x,
+                    center_y - big//2 + offset_y,
+                    big
+                )
+
+            elif draw_emotion == Emotion.SLEEPY:
+
+                sleepy_h = int(eye_size * 0.35)
+
+                pygame.draw.rect(
+                    screen,(255,255,255),
+                    (left_x,y+eye_size//3,eye_size,sleepy_h),
+                    border_radius=20
+                )
+
+                pygame.draw.rect(
+                    screen,(255,255,255),
+                    (right_x,y+eye_size//3,eye_size,sleepy_h),
+                    border_radius=20
+                )
+
+            elif draw_emotion == Emotion.BLINK:
+
+                blink_h = int(eye_size * 0.15)
+
+                pygame.draw.rect(
+                    screen,(255,255,255),
+                    (left_x,y+eye_size//2,eye_size,blink_h),
+                    border_radius=20
+                )
+
+                pygame.draw.rect(
+                    screen,(255,255,255),
+                    (right_x,y+eye_size//2,eye_size,blink_h),
+                    border_radius=20
+                )
+
+            elif draw_emotion == Emotion.HAPPY:
+
+                happy_h = int(eye_size * 0.55)
+
+                pygame.draw.rect(
+                    screen,(255,255,255),
+                    (left_x, y + eye_size*0.25, eye_size, happy_h),
+                    border_radius=30
+                )
+
+                pygame.draw.rect(
+                    screen,(255,255,255),
+                    (right_x, y + eye_size*0.25, eye_size, happy_h),
+                    border_radius=30
+                )
+
+            elif draw_emotion == Emotion.SAD:
+
+                sad_h = int(eye_size * 0.7)
+
+                pygame.draw.rect(
+                    screen,(255,255,255),
+                    (left_x, y + 40, eye_size, sad_h),
+                    border_radius=40
+                )
+
+                pygame.draw.rect(
+                    screen,(255,255,255),
+                    (right_x, y + 40, eye_size, sad_h),
+                    border_radius=40
+                )
+
+            elif draw_emotion == Emotion.ANGRY:
+
+                tilt = 30
+
+                pygame.draw.polygon(
+                    screen,(255,255,255),
+                    [
+                        (left_x, y+tilt),
+                        (left_x+eye_size, y),
+                        (left_x+eye_size, y+eye_size),
+                        (left_x, y+eye_size)
+                    ]
+                )
+
+                pygame.draw.polygon(
+                    screen,(255,255,255),
+                    [
+                        (right_x, y),
+                        (right_x+eye_size, y+tilt),
+                        (right_x+eye_size, y+eye_size),
+                        (right_x, y+eye_size)
+                    ]
+                )
+
+
+        # ================= MESSAGE ================= #
+
+        elif screen_mode == "message":
+
+            if message != last_text:
+                text_cache = font.render(message,True,(255,255,255))
+                last_text = message
+
+            rect = text_cache.get_rect(center=(width//2,height//2))
+            screen.blit(text_cache,rect)
+
+
+        # ================= REPORT ================= #
+
+        elif screen_mode == "report":
+
+            y_pos = 150
 
             if data:
+
                 for k,v in data.items():
 
                     txt = font.render(f"{k}: {v}",True,(255,255,255))
-                    render_surface.blit(txt,(200,y))
+                    screen.blit(txt,(200,y_pos))
 
-                    y += 50
-
-        # scale 720p → fullscreen 4k
-        scaled = pygame.transform.smoothscale(render_surface,(screen_w,screen_h))
-        screen.blit(scaled,(0,0))
+                    y_pos += 60
 
         pygame.display.flip()
 
-        clock.tick(12)
+        clock.tick(5)   # low CPU
+
 
     pygame.quit()
 
 
-def start_gui():
+# ---------- START ----------
 
+def start_gui():
+    
     thread = threading.Thread(target=gui_loop,daemon=True)
     thread.start()

@@ -5,7 +5,7 @@ from AssistentCore import AssistantState,AssistantCore
 Assistant = AssistantCore(AssistantState.LOADING)
 from modules.Logging import Log
 from modules.fuzzy import fuzzy
-from Server.serve import serve,Request,Response
+from Server.serve import Request,Response,ServerRuntime
 
 import screen as gui
 
@@ -16,7 +16,7 @@ fz_threshold = 0.9
 
 def server(req:Request, res:Response):
     #config
-    req.default_vad_timeout = 10  # Set default VAD timeout to 10 seconds
+    req.default_vad_timeout = 15  # Set default VAD timeout to 15 seconds
     log.info("Server is ready to handle requests.")
     gui.start_gui()
     res.gui = req.gui = gui
@@ -43,17 +43,21 @@ def server(req:Request, res:Response):
                 table = format_report_table(StudentInfo)
                 log.info(f"Generated report for {studentname}:\n{table}")
                 print("\n"*2+table,end="\n"*2)
-                if "yes" == confirm(req,"Do u want me to speak out loud?"):
-                    res.send(dict_to_tts(StudentInfo))
+                if "yes" == confirm(req,"Do u want me to speak out loud?",update_gui=False):
+                    res.send(dict_to_tts(StudentInfo),update_gui=False)
         except TimeoutError:
-            res.send("Recording timed out.")
+            res.send("Recording timed out.",update_gui=False)
             print("\n[VAD] Timeout reached, no speech detected.\n")
-        finally:
-            res.send("Going back to sleep mode.")
-            continue
+        except KeyboardInterrupt:
+            res.send("Goodbye!",update_gui=False)
+            print("\n[System] Exit command received, shutting down.\n")
+            break
+        # finally:
+        #     res.send("Going back to sleep mode.",update_gui=False)
+        #     continue
 
-def confirm(req:Request,question:str,options:list[str] = ["yes","no"],timeout=None):
-        answer = req.input_no_wait(question+" (yes or no)",timeout=timeout)
+def confirm(req:Request,question:str,options:list[str] = ["yes","no"],timeout=None,update_gui=True):
+        answer = req.input_no_wait(question+" (yes or no)",timeout=timeout,update_gui=update_gui)
         return fz.fuzzy_match(answer,options)[0][0]
 
 
@@ -73,7 +77,6 @@ def ask_for_student(req:Request,res:Response,NameList:list[str]):
 
             if fuzzy_result[0][1] >= fz_threshold or "yes" == confirm(req,"Do you mean "+fuzzy_result[0][0]+"?"):
                 return fuzzy_result[0][0]
-            
             else:
                 res.send("Sorry, I couldn't find your name.")
                 return False
@@ -212,9 +215,19 @@ def format_report_table(data: dict, use_color=True) -> str:
     return "\n".join(out) 
 
 def onStateGUI(state,is_start):
-    if state == AssistantState.SPEAKING and not is_start:
-        gui.show_eyes()
+    if gui.state["screen"] !="report":
+
+        if state == AssistantState.SPEAKING and not is_start:
+            if gui.state["screen"] == "message":
+                gui.show_eyes()
+        
+        if state == AssistantState.THINKING and is_start:
+            if gui.state["screen"] == "eyes":
+                gui.set_emotion(gui.Emotion.CURIOUS)
+        elif state == AssistantState.THINKING and not is_start:
+            if gui.state["screen"] == "eyes":
+                gui.set_emotion(gui.Emotion.HAPPY)
     
 
-serve(server,Assistant)
+ServerRuntime(server,Assistant)
 

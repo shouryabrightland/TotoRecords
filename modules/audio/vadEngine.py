@@ -11,7 +11,7 @@ from modules.audio.recoderConfig import RecorderConfig
 class VADEngine:
     def __init__(self, config: RecorderConfig):
         self.cfg = config
-        self.log = Log("VADEngine")
+        self.log = Log("VADEngine",Log.DEBUG)
 
         self.vad_model, _ = torch.hub.load(
             repo_or_dir="snakers4/silero-vad",

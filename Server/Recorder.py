@@ -32,7 +32,6 @@ class Recorder:
         self.stt = stt
 
         self.audio_buffer = deque(maxlen=int(self.cfg.sr * self.cfg.window_sec))
-        self.pre_roll = deque(maxlen=int(self.cfg.sr * self.cfg.pre_roll_sec))
 
         self.recording = False
         self.command_queue = Queue()
@@ -69,7 +68,6 @@ class Recorder:
         chunk = indata[:, 0].copy()
 
         self.audio_buffer.extend(chunk)
-        self.pre_roll.extend(chunk)
 
         if self.mode == RecordingMode.WAKE:
             if self.wake.detect(self.audio_buffer):
@@ -79,7 +77,7 @@ class Recorder:
 
 
         if not self.recording:
-            if self.wake.detect(self.audio_buffer) or self.mode == RecordingMode.DIRECT:
+            if self.mode == RecordingMode.DIRECT or self.wake.detect(self.audio_buffer):
                 self.Assistant.start_state(AssistantState.LISTENING)
                 self._start_recording()
 
