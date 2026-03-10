@@ -1,126 +1,159 @@
+# ================= IMPORTS =================
+
+from _csv import _reader
+from io import Reader
 import json
 import re
 import csv
-from AssistentCore import AssistantState,AssistantCore
-Assistant = AssistantCore(AssistantState.LOADING)
+from typing import Any, Literal, LiteralString
+
+from AssistentCore import AssistantState, AssistantCore
 from modules.Logging import Log
 from modules.fuzzy import fuzzy
-from Server.serve import Request,Response,ServerRuntime
+from Server.serve import Request, Response, ServerRuntime
 
 import screen as gui
 
+
+# ================= INITIALIZATION =================
+
+Assistant = AssistantCore(AssistantState.LOADING)
+
 DATA_DIR = "data"
+FUZZY_THRESHOLD = 0.9
+
 log = Log("Request Handler (main.py)")
 fz = fuzzy()
-fz_threshold = 0.9
-
-def server(req:Request, res:Response):
-    #config
-    req.default_vad_timeout = 15  # Set default VAD timeout to 15 seconds
-    log.info("Server is ready to handle requests.")
-    gui.start_gui()
-    res.gui = req.gui = gui
-
-    Assistant.on_state_change(onStateGUI)
-    while req.detect_call():
-        gui.show_eyes()
-        print("restarting request loop")
-        try:
-
-            #get the class file
-            classname = ask_for_class_file(req,res)
-            #classname = "data/12.csv"
-            #load class file
-
-            StudentList = loadClassFile(classname)
-            NameList = list(StudentList.keys())
-            #we got students list
-
-            studentname = ask_for_student(req,res,NameList)
-            if studentname:
-                StudentInfo = StudentList[studentname]
-                gui.show_report(StudentInfo)
-                table = format_report_table(StudentInfo)
-                log.info(f"Generated report for {studentname}:\n{table}")
-                print("\n"*2+table,end="\n"*2)
-                if "yes" == confirm(req,"Do u want me to speak out loud?",update_gui=False):
-                    res.send(dict_to_tts(StudentInfo),update_gui=False)
-        except TimeoutError:
-            res.send("Recording timed out.",update_gui=False)
-            print("\n[VAD] Timeout reached, no speech detected.\n")
-        except KeyboardInterrupt:
-            res.send("Goodbye!",update_gui=False)
-            print("\n[System] Exit command received, shutting down.\n")
-            break
-        # finally:
-        #     res.send("Going back to sleep mode.",update_gui=False)
-        #     continue
-
-def confirm(req:Request,question:str,options:list[str] = ["yes","no"],timeout=None,update_gui=True):
-        answer = req.input_no_wait(question+" (yes or no)",timeout=timeout,update_gui=update_gui)
-        return fz.fuzzy_match(answer,options)[0][0]
 
 
-def ask_for_student(req:Request,res:Response,NameList:list[str]):
+# ================= TEXT UTILITIES =================
+
+def tokenize(text: str)  -> list[Any]:
+    return re.findall(r"\b\w+\b", text)
+
+
+# ================= CSV DATA =================
+
+def loadClassFile(filepath):# -> dict:
+
+    students = {}
+
+    with open(filepath, "r", newline="", encoding="utf-8") as file:
+
+        reader: Reader = csv.reader(file)
+        header = next(reader)
+
+        for row in reader:
+
+            name = row[0]
+            student_data = {}
+
+            for key, value in zip(header[1:], row[1:]):
+                student_data[key] = value
+
+            students[name] = student_data
+
+    return students
+
+
+# ================= USER CONFIRMATION =================
+
+def confirm(req: Request, question: str,
+            options: list[str] = ["yes", "no"],
+            timeout=None,
+            update_gui=True):
+
+    answer = req.input_direct(
+        question + " (yes or no)",
+        timeout=timeout,
+        update_gui=update_gui
+    )
+
+    return fz.fuzzy_match_basic(answer, options)[0][0]
+
+
+# ================= STUDENT MATCHING =================
+
+def ask_for_student(req: Request, res: Response, NameList: list[str]):
+
     while True:
-        rawName = req.input_no_wait("What is Your Name?",", ".join(NameList))
 
-        fuzzy_result = fz.fuzzy_match(rawName,NameList)
+        rawName = req.input_direct(
+            "What is Your Name?",
+            ", ".join(NameList)
+        )
 
-        if fuzzy_result[0][1] >= fz_threshold or "yes" == confirm(req,"Do you mean "+fuzzy_result[0][0]+"?"):
+        fuzzy_result = fz.fuzzy_match(rawName, NameList)
+
+        if len(fuzzy_result) and (fuzzy_result[0][1] >= FUZZY_THRESHOLD or \
+           confirm(req, f"Do you mean {fuzzy_result[0][0]}?") == "yes"):
             return fuzzy_result[0][0]
-        
         else:
-            spellname = req.input("Could you give me the spelling of your last name?",", ".join(list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")))
-            spellname = "".join(re.findall(r"\b[A-Za-z]{1}\b", spellname))
-            fuzzy_result = fz.fuzzy_match(spellname,NameList)
+            spellname = req.input(
+                "Could you give me the spelling of your last name?",
+                ", ".join(list("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+            )
 
-            if fuzzy_result[0][1] >= fz_threshold or "yes" == confirm(req,"Do you mean "+fuzzy_result[0][0]+"?"):
+            spellname = "".join(
+                re.findall(r"\b[A-Za-z]{1}\b", spellname)
+            )
+
+            fuzzy_result = fz.fuzzy_match(spellname, NameList)
+
+            if len(fuzzy_result) and (fuzzy_result[0][1] >= FUZZY_THRESHOLD or \
+               confirm(req, f"Do you mean {fuzzy_result[0][0]}?") == "yes"):
+
                 return fuzzy_result[0][0]
+
             else:
                 res.send("Sorry, I couldn't find your name.")
                 return False
 
-def get_class(text:str):
-    '''check if user has mentioned class in text'''
+
+# ================= CLASS FILE HANDLING =================
+
+def get_class(text: str) -> LiteralString | Literal[False]:
+
     tokens = tokenize(text)
+
     try:
         index = tokens.index("class")
     except ValueError:
         return False
+
     return " ".join(tokens[index+1:])
 
-def ask_for_class_file(req:Request,res:Response,classname:str=None):
-    '''takes class name from user'''
+
+def ask_for_class_file(req: Request, res: Response, classname=None):
+
     while True:
+
         if not classname:
-            inp = req.input_no_wait("Confirm your class Please?",", ".join(["class "+str(i) for i in range(1,13)])).lower()
+
+            inp = req.input_direct(
+                "Confirm your class Please?",
+                ", ".join([f"class {i}" for i in range(1, 13)])
+            ).lower()
+
             classname = get_class(inp)
+
             if not classname:
-                res.send("Inproper reply. [Hint: Say 'class 9, class 10']")
+                res.send("Improper reply. [Hint: Say 'class 9']")
                 continue
-        check_list = fz.fuzzy_file_match(classname+".csv",DATA_DIR)
-        if check_list[0][1] >= fz_threshold or "yes" == confirm(req,"Do you mean "+check_list[0][0].split(".",1)[0]+"?"):
-            return DATA_DIR+"/"+check_list[0][0]
+############################################################################################################
+        check_list = fz.fuzzy_file_match(classname + ".csv", DATA_DIR)
+
+        if len(check_list) and (check_list[0][1] >= FUZZY_THRESHOLD or \
+           confirm(req, f"Do you mean {check_list[0][0].split('.',1)[0]}?") == "yes"):
+
+            return DATA_DIR + "/" + check_list[0][0]
+        else:
+            res.send("Provide")
+
         classname = None
 
-def loadClassFile(filepath):
-    '''gives dict from csv'''
-    students = {}
-    with open(filepath, "r", newline="", encoding="utf-8") as file:
-        reader = csv.reader(file)
-        header = next(reader)
-        for row in reader:
-            name = row[0]
-            student_data = {}
-            for key, value in zip(header[1:], row[1:]):
-                    student_data[key] = value
-            students[name] = student_data
-    return students
-    
-def tokenize(text:str):
-    '''tokenise the text'''
-    return re.findall(r"\b\w+\b",text)
+
+# ================= TTS FORMATTER =================
 
 def dict_to_tts(data: dict) -> str:
 
@@ -136,7 +169,7 @@ def dict_to_tts(data: dict) -> str:
         if isinstance(value, str):
             value = value.replace("+", " plus").replace("-", " minus")
 
-        if key.lower() in {"total", "grade", "percentage", "result"}:
+        if key.lower() in {"total","grade","percentage","result"}:
             metadata.append(f"The {spoken_key} is {value}.")
         else:
             subjects.append(f"{spoken_key} {value}")
@@ -152,82 +185,104 @@ def dict_to_tts(data: dict) -> str:
     return " ".join(parts)
 
 
-def format_report_table(data: dict, use_color=True) -> str:
+# ================= REPORT TABLE =================
 
-    # ANSI colors
-    GREEN = "\033[92m"
-    CYAN = "\033[96m"
-    YELLOW = "\033[93m"
-    RESET = "\033[0m"
+def format_report_table(data: dict):
 
-    def color(text, c):
-        return f"{c}{text}{RESET}" if use_color else text
+    rows = [(k.replace("_"," ").title(), str(v)) for k,v in data.items()]
 
-    # normalize keys
-    rows = [(k.replace("_", " ").title(), str(v)) for k, v in data.items()]
+    key_w = max(len(k) for k,_ in rows)
+    val_w = max(len(v) for _,v in rows)
 
-    summary_keys = {"total", "grade", "percentage", "result"}
-
-    subjects = []
-    summary = []
-
-    for k, v in rows:
-        if k.lower() in summary_keys:
-            summary.append((k, v))
-        else:
-            subjects.append((k, v))
-
-    # widths
-    key_w = max(len(k) for k, _ in rows)
-    val_w = max(len(v) for _, v in rows)
-
-    def line(l, m, r):
-        return l + "─" * (key_w + 2) + m + "─" * (val_w + 2) + r
+    def line(l,m,r):
+        return l + "─"*(key_w+2) + m + "─"*(val_w+2) + r
 
     out = []
 
-    # header
-    out.append(line("┌", "┬", "┐"))
+    out.append(line("┌","┬","┐"))
+    out.append(f"│ {'REPORT CARD'.center(key_w+val_w+3)} │")
+    out.append(line("├","┬","┤"))
 
-    title = "REPORT CARD"
-    total_width = key_w + val_w + 5
-    out.append(f"│ {color(title.center(total_width-2), CYAN)} │")
+    for k,v in rows:
+        out.append(f"│ {k:<{key_w}} │ {v:>{val_w}} │")
 
-    out.append(line("├", "┬", "┤"))
+    out.append(line("└","┴","┘"))
 
-    # subjects
-    for k, v in subjects:
-        out.append(
-            f"│ {k:<{key_w}} │ {color(v, GREEN):>{val_w + (9 if use_color else 0)}} │"
-        )
+    return "\n".join(out)
 
-    # summary section
-    if summary:
-        out.append(line("├", "┼", "┤"))
 
-        for k, v in summary:
-            out.append(
-                f"│ {color(k, YELLOW):<{key_w + (9 if use_color else 0)}} │ {v:>{val_w}} │"
-            )
+# ================= GUI STATE HANDLER =================
 
-    out.append(line("└", "┴", "┘"))
+def onStateGUI(state, is_start):
 
-    return "\n".join(out) 
-
-def onStateGUI(state,is_start):
-    if gui.state["screen"] !="report":
+    if gui.state["screen"] != "report":
 
         if state == AssistantState.SPEAKING and not is_start:
             if gui.state["screen"] == "message":
                 gui.show_eyes()
-        
+
         if state == AssistantState.THINKING and is_start:
             if gui.state["screen"] == "eyes":
                 gui.set_emotion(gui.Emotion.CURIOUS)
+
         elif state == AssistantState.THINKING and not is_start:
             if gui.state["screen"] == "eyes":
-                gui.set_emotion(gui.Emotion.HAPPY)
-    
+                gui.set_emotion(gui.Emotion.NORMAL)
 
-ServerRuntime(server,Assistant)
 
+# ================= MAIN SERVER =================
+
+def server(req: Request, res: Response):
+
+    req.default_vad_timeout = 15
+
+    gui.start_gui()
+    res.gui = req.gui = gui
+
+    Assistant.on_state_change(onStateGUI)
+
+    log.info("Server ready.")
+
+    while req.detect_call():
+
+        gui.show_eyes()
+
+        try:
+
+            classname = "data/12.csv"
+
+            StudentList = loadClassFile(classname)
+            NameList = [x.lower() for x in StudentList.keys()]
+
+            studentname = ask_for_student(req, res, NameList)
+
+            if studentname:
+
+                StudentInfo = StudentList[studentname]
+
+                gui.show_report(StudentInfo)
+
+                table = format_report_table(StudentInfo)
+
+                log.info(f"Generated report for {studentname}:\n{table}")
+
+                print("\n"*2 + table + "\n"*2)
+
+                if confirm(req,"Do you want me to speak it?") == "yes":
+                    res.send(dict_to_tts(StudentInfo), update_gui=False)
+
+        except TimeoutError:
+
+            res.send("Recording timed out.", update_gui=False)
+            print("\n[VAD] Timeout reached.\n")
+
+        except KeyboardInterrupt:
+
+            res.send("Goodbye!", update_gui=False)
+            print("\n[System] Shutdown.\n")
+            break
+
+
+# ================= RUNTIME =================
+
+ServerRuntime(server, Assistant)

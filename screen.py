@@ -319,7 +319,7 @@ def gui_loop():
 
         pygame.display.flip()
 
-        clock.tick(5)   # low CPU
+        clock.tick(2)   # low CPU
 
 
     pygame.quit()

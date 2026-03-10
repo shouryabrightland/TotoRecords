@@ -93,7 +93,8 @@ class Request:
     
     def check_exit(self,val:str):
         if val in ["exit","quit","close"]:
-            raise KeyboardInterrupt("Exit command received")
+            if "yes" in self.input_direct("Are you sure you want to exit?"):
+                raise KeyboardInterrupt("Exit command received")
 
 
 
